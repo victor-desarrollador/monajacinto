@@ -1,263 +1,390 @@
 # 26 — SEGURIDAD
 
-## 1. OBJETIVO
+## VM Digital Studio — Sistema de Gestión Multisucursal
 
-Definir los requisitos de seguridad técnicos y operativos del sistema de gestión multSucursal.
+**Versión:** 1.0
+**Estado:** Especificación funcional y técnica
+**Clasificación:** CRÍTICO
+**Aplica a:** Frontend, Backend, Base de Datos, Infraestructura, Integraciones y Operaciones
 
-El sistema controla información y operaciones críticas:
+---
 
-* dinero;
-* cajas;
-* cuentas financieras;
+# 1. OBJETIVO
+
+El objetivo de este módulo es definir el modelo de seguridad integral del sistema de gestión multisucursal.
+
+El sistema administra información y operaciones críticas:
+
+* usuarios;
+* empleados;
+* sucursales;
+* productos;
 * stock;
-* ventas;
+* depósitos;
 * compras;
 * proveedores;
-* clientes;
-* empleados;
-* sueldos;
+* ventas;
+* cajas;
+* arqueos;
+* cuentas financieras;
+* tesorería;
 * reservas;
-* transferencias;
+* señas;
+* préstamos de prendas;
+* cambios y devoluciones;
+* sueldos;
+* ventas a empleados;
 * facturación;
+* información de clientes;
+* movimientos de dinero;
 * auditoría.
 
-Por lo tanto, la seguridad no debe considerarse una funcionalidad adicional.
+Por lo tanto, la seguridad no debe limitarse a proteger el login.
 
-Debe formar parte de la arquitectura desde el inicio.
+Debe proteger:
 
----
-
-# 2. PRINCIPIO FUNDAMENTAL
-
-El sistema debe asumir que:
-
-```text
-El usuario puede equivocarse.
-El usuario puede intentar realizar una operación no autorizada.
-El cliente puede enviar datos manipulados.
-El frontend puede ser manipulado.
-Una request puede repetirse.
-Una integración externa puede fallar.
-```
-
-Por lo tanto:
-
-> **La seguridad y las reglas de negocio deben validarse en el backend.**
-
-Nunca confiar únicamente en el frontend.
+> **identidad + permisos + alcance + reglas de negocio + estados + datos + operaciones + trazabilidad.**
 
 ---
 
-# 3. MODELO DE SEGURIDAD
+# 2. PRINCIPIOS FUNDAMENTALES
 
-La seguridad se divide en:
+El sistema deberá implementar los siguientes principios.
+
+## 2.1 Denegar por defecto
+
+Si un usuario no posee explícitamente un permiso, la operación debe ser rechazada.
+
+Nunca:
 
 ```text
-Autenticación
-     ↓
-Identificación
-     ↓
-Autorización
-     ↓
-Alcance
-     ↓
-Validación
-     ↓
-Ejecución
-     ↓
-Auditoría
+si no está prohibido → permitir
 ```
+
+Debe funcionar como:
+
+```text
+si no está permitido → rechazar
+```
+
+---
+
+## 2.2 Mínimo privilegio
+
+Cada usuario tendrá solamente los permisos necesarios para realizar su trabajo.
+
+Ejemplo:
+
+Un vendedor puede:
+
+* consultar productos;
+* consultar stock permitido;
+* crear ventas;
+* enviar ventas a caja;
+* crear reservas.
+
+Pero no puede:
+
+* cerrar caja;
+* modificar dinero;
+* eliminar ventas;
+* modificar stock arbitrariamente;
+* modificar precios globales;
+* aprobar devoluciones especiales;
+* acceder a tesorería central.
+
+---
+
+## 2.3 Separación de funciones
+
+Las operaciones críticas deberán evitar concentrar demasiadas responsabilidades en una misma persona.
 
 Ejemplo:
 
 ```text
-Usuario inicia sesión
-        ↓
-Sistema identifica usuario
-        ↓
-Sistema obtiene roles/permisos
-        ↓
-Sistema determina sucursal autorizada
-        ↓
-Backend valida operación
-        ↓
-Ejecuta operación
-        ↓
-Registra auditoría
+VENDEDOR
+   ↓
+crea venta
+   ↓
+PENDIENTE_DE_COBRO
+   ↓
+CAJERO
+   ↓
+cobra
+   ↓
+finaliza operación
 ```
+
+El vendedor no debe convertirse automáticamente en cajero.
+
+---
+
+## 2.4 Backend como autoridad
+
+El frontend nunca será considerado una frontera de seguridad.
+
+El frontend puede ocultar botones, pero eso solamente mejora UX.
+
+La seguridad real debe estar en:
+
+```text
+API
+ ↓
+Autenticación
+ ↓
+Autorización
+ ↓
+Scope
+ ↓
+Reglas de negocio
+ ↓
+Base de datos
+```
+
+Nunca confiar únicamente en:
+
+```text
+disabled={true}
+```
+
+o:
+
+```text
+if (role === "ADMIN")
+```
+
+en React.
+
+---
+
+# 3. MODELO DE AMENAZAS
+
+El sistema deberá contemplar como mínimo:
+
+### Amenazas internas
+
+* vendedor intentando modificar una venta;
+* cajero intentando alterar una operación histórica;
+* empleado accediendo a información salarial ajena;
+* usuario accediendo a otra sucursal;
+* modificación manual de stock;
+* modificación de precios sin autorización;
+* devolución fraudulenta;
+* descuentos no autorizados;
+* manipulación de caja;
+* creación de movimientos financieros falsos.
+
+### Amenazas externas
+
+* robo de credenciales;
+* acceso no autorizado a API;
+* ataques de fuerza bruta;
+* IDOR;
+* inyección SQL;
+* XSS;
+* CSRF cuando corresponda;
+* abuso de endpoints;
+* robo de tokens;
+* exposición de secretos;
+* manipulación de webhooks;
+* explotación de dependencias vulnerables.
 
 ---
 
 # 4. AUTENTICACIÓN
 
-Todo usuario que acceda al sistema debe estar autenticado.
+## 4.1 Identidad
 
-La autenticación debe controlar:
+Cada usuario debe poseer una identidad única.
 
-* identidad;
-* credenciales;
-* sesión;
-* expiración;
-* revocación;
-* estado del usuario.
+No se deben utilizar cuentas compartidas para operaciones normales.
 
-Estados posibles:
+Ejemplo incorrecto:
 
 ```text
-ACTIVE
-INACTIVE
-BLOCKED
-PENDING
+cajero
+contraseña123
 ```
 
-Un usuario `INACTIVE` o `BLOCKED` no puede iniciar nuevas sesiones.
+Ejemplo correcto:
+
+```text
+usuario: maria.gomez
+rol: CAJERO
+sucursal: Centro
+```
+
+Esto permite saber quién realizó cada operación.
 
 ---
 
 # 5. CONTRASEÑAS
 
-Las contraseñas nunca deben almacenarse directamente.
+Las contraseñas nunca deben almacenarse en texto plano.
 
-Incorrecto:
+Debe utilizarse un algoritmo moderno de hashing resistente a ataques offline.
 
-```text
-password = "123456"
-```
-
-Correcto:
+Preferencia:
 
 ```text
-passwordHash = <hash seguro>
+Argon2id
 ```
 
-Debe utilizarse un algoritmo moderno de hashing de contraseñas.
-
-Nunca almacenar:
+Alternativa aceptable si la infraestructura o librería lo requiere:
 
 ```text
-password
-passwordPlain
-passwordEncrypted
+bcrypt
 ```
 
-como mecanismo principal de almacenamiento.
+Nunca:
+
+```text
+MD5
+SHA1
+SHA256(password)
+```
+
+sin un esquema de password hashing apropiado.
 
 ---
 
 # 6. POLÍTICA DE CONTRASEÑAS
 
-La política exacta debe definirse durante implementación, pero debe contemplar como mínimo:
+La política deberá establecer como mínimo:
 
-* longitud suficiente;
+* longitud mínima configurable;
 * rechazo de contraseñas extremadamente débiles;
-* protección contra credenciales comprometidas cuando corresponda;
-* almacenamiento mediante hash;
-* recuperación segura.
+* protección contra credenciales comprometidas cuando sea viable;
+* posibilidad de cambio de contraseña;
+* recuperación segura;
+* invalidación de sesiones después de cambios críticos;
+* nunca mostrar contraseñas existentes.
 
-No establecer requisitos arbitrarios que incentiven contraseñas predecibles.
+No implementar reglas absurdamente complejas que incentiven contraseñas inseguras.
+
+La longitud tendrá prioridad sobre requisitos arbitrarios de símbolos.
 
 ---
 
 # 7. SESIONES
 
-Una sesión autenticada debe tener:
+El sistema deberá administrar sesiones de usuario.
+
+Una sesión debe estar asociada a:
 
 ```text
-sessionId
 userId
+sessionId
 createdAt
 expiresAt
 lastActivityAt
+ip / metadata cuando corresponda
+userAgent cuando sea necesario
 revokedAt
 ```
 
-Opcionalmente:
-
-```text
-ip
-userAgent
-device
-```
-
-si resulta necesario para seguridad y auditoría.
-
----
-
-# 8. REVOCACIÓN
-
-Debe ser posible invalidar sesiones.
-
-Casos:
-
-```text
-usuario bloqueado
-cambio de credenciales
-logout global
-sospecha de compromiso
-administrador revoca sesión
-```
-
-Una sesión revocada no debe volver a utilizarse.
-
----
-
-# 9. AUTENTICACIÓN DE API
-
-El frontend nunca debe poder ejecutar operaciones administrativas simplemente porque conoce un endpoint.
+Las sesiones deberán poder ser revocadas.
 
 Ejemplo:
 
 ```text
-POST /api/cash/registers/:id/close
-```
-
-requiere:
-
-```text
-authenticated user
-+
-permission
-+
-branch scope
-+
-business validation
+ADMIN
+ ↓
+"cerrar todas las sesiones de usuario"
 ```
 
 ---
 
-# 10. RBAC
+# 8. TOKENS
 
-El sistema utilizará control de acceso basado en roles.
+Si se utilizan JWT:
 
-Conceptualmente:
+* expiración corta para access tokens;
+* refresh token separado;
+* rotación de refresh tokens;
+* revocación;
+* protección contra reutilización;
+* no almacenar secretos dentro del payload;
+* no confiar en claims sin validación.
+
+El JWT no reemplaza la autorización.
+
+Ejemplo:
+
+```text
+JWT dice:
+role = VENDEDOR
+```
+
+Eso no significa que el backend pueda permitir cualquier operación de vendedor.
+
+Debe verificarse:
+
+```text
+usuario
++
+rol
++
+permiso
++
+empresa
++
+sucursal
++
+recurso
++
+estado
+```
+
+---
+
+# 9. AUTORIZACIÓN
+
+Se utilizará RBAC como base:
+
+```text
+Role-Based Access Control
+```
+
+pero combinado con permisos específicos y alcance organizacional.
+
+Modelo:
 
 ```text
 User
-  ↓
+ ↓
 Role
-  ↓
+ ↓
 Permissions
+ ↓
+Scope
 ```
 
-Ejemplo:
+---
+
+# 10. ROLES
+
+Los roles principales estarán definidos en:
+
+`02_ROLES_Y_PERMISOS.md`
+
+Como mínimo deberán contemplarse:
 
 ```text
-CAJERO
- ├── sales.read
- ├── payments.create
- ├── cash.open
- ├── cash.close
- └── cash.count
-```
-
-Mientras:
-
-```text
+SUPER_ADMIN
+ADMIN
+GERENTE
+ENCARGADO_SUCURSAL
 VENDEDOR
- ├── products.read
- ├── sales.create
- └── reservations.create
+CAJERO
+DEPOSITO
+TESORERIA
+CONTABILIDAD
+RRHH
+AUDITOR
 ```
+
+Los nombres finales deberán mantenerse consistentes con el módulo 02.
 
 ---
 
@@ -266,683 +393,780 @@ VENDEDOR
 No utilizar únicamente:
 
 ```text
-isAdmin = true
+role === ADMIN
 ```
 
-El sistema debe utilizar permisos explícitos.
+Los permisos deberán representar acciones.
 
-Ejemplo:
+Ejemplos:
 
 ```text
 sales.create
 sales.read
 sales.cancel
-sales.discount
+
+payments.create
+payments.refund
+
 cash.open
 cash.close
 cash.adjust
-inventory.read
-inventory.adjust
-inventory.transfer
+
+stock.read
+stock.adjust
+
+transfers.create
+transfers.approve
+transfers.dispatch
+transfers.receive
+
 purchases.create
 purchases.receive
+
+employees.read
+employees.salary.read
+
 treasury.read
 treasury.transfer
-employees.read
-employees.pay
-```
+treasury.adjust
 
-La lista definitiva se define en el módulo de roles y permisos.
+reports.read
+reports.export
+
+audit.read
+```
 
 ---
 
-# 12. PRINCIPIO DE MÍNIMO PRIVILEGIO
+# 12. SCOPE MULTISUCURSAL
 
-Cada usuario debe disponer solamente de los permisos necesarios.
+Este es uno de los puntos más importantes del sistema.
+
+Un usuario puede tener acceso:
+
+```text
+GLOBAL
+```
+
+o:
+
+```text
+BRANCH
+```
+
+o:
+
+```text
+WAREHOUSE
+```
+
+según su función.
 
 Ejemplo:
 
 ```text
-Vendedor
+Vendedor sucursal Centro
 ```
 
-no necesita:
+debe poder consultar:
 
 ```text
-treasury.transfer
-cash.close
-employee.pay
-inventory.adjust
+Sucursal Centro
 ```
 
-aunque técnicamente pueda acceder al sistema.
+pero no:
+
+```text
+Sucursal Yerba Buena
+Sucursal Tafí Viejo
+Sucursal San Miguel
+```
+
+salvo que posea explícitamente ese alcance.
 
 ---
 
-# 13. SEPARACIÓN DE FUNCIONES
+# 13. PREVENCIÓN DE IDOR
 
-Las operaciones sensibles deben separar responsabilidades.
+El sistema debe prevenir ataques de tipo:
+
+```text
+Insecure Direct Object Reference
+```
+
+Ejemplo peligroso:
+
+```http
+GET /api/sales/8472
+```
+
+No alcanza con verificar:
+
+```text
+user autenticado = true
+```
+
+El backend debe verificar que:
+
+```text
+sale.companyId === user.companyId
+```
+
+y además:
+
+```text
+sale.branchId pertenece al scope del usuario
+```
+
+cuando corresponda.
+
+Nunca confiar en IDs enviados por el cliente.
+
+---
+
+# 14. AISLAMIENTO POR EMPRESA
+
+Toda entidad operativa deberá pertenecer a una empresa.
 
 Ejemplo:
-
-```text
-Vendedor
-   ↓
-crea venta
-
-Cajero
-   ↓
-cobra y finaliza
-
-Administrador
-   ↓
-autoriza determinadas excepciones
-```
-
-Esto reduce el riesgo de fraude y errores.
-
----
-
-# 14. POS ≠ CAJA
-
-La seguridad debe respetar esta separación.
-
-El vendedor puede:
-
-```text
-crear venta
-```
-
-pero no necesariamente:
-
-```text
-cobrar
-cerrar caja
-hacer arqueo
-retirar dinero
-```
-
-El cajero puede:
-
-```text
-finalizar venta
-```
-
-pero no necesariamente:
-
-```text
-modificar stock arbitrariamente
-```
-
----
-
-# 15. ALCANCE POR EMPRESA
-
-Todas las operaciones deben estar asociadas al contexto:
 
 ```text
 companyId
 ```
 
-El backend debe verificar que el usuario tenga acceso a la empresa correspondiente.
-
-Nunca confiar en un `companyId` enviado desde el frontend.
-
----
-
-# 16. ALCANCE POR SUCURSAL
-
-Cuando corresponda:
-
-```text
-company
-   ↓
-branch
-   ↓
-user
-```
-
-El backend debe verificar:
-
-```text
-¿Este usuario puede operar en esta sucursal?
-```
-
-antes de ejecutar la operación.
-
----
-
-# 17. EJEMPLO DE ATAQUE
-
-Un usuario autorizado para:
-
-```text
-Branch A
-```
-
-intenta:
-
-```text
-GET /api/sales/BRANCH-B-SALE-ID
-```
-
-El sistema no debe responder simplemente porque el ID existe.
-
-Debe validar:
-
-```text
-user scope
-+
-sale branch
-+
-permission
-```
-
-Resultado:
-
-```text
-FORBIDDEN
-```
-
-o una respuesta equivalente apropiada.
-
----
-
-# 18. IDOR
-
-Debe evitarse el acceso directo a recursos mediante IDs manipulados.
-
-Ejemplo peligroso:
-
-```text
-GET /api/employees/123
-```
-
-No significa que el usuario pueda consultar cualquier empleado `123`.
-
-Debe comprobarse:
-
-```text
-resource ownership/scope
-+
-permission
-```
-
----
-
-# 19. VALIDACIÓN DE INPUT
-
-Todo dato recibido desde:
-
-```text
-frontend
-API
-importación
-integración
-webhook
-```
-
-debe considerarse no confiable.
-
-Validar:
-
-* tipo;
-* formato;
-* longitud;
-* rango;
-* enum;
-* relaciones;
-* permisos;
-* estado.
-
----
-
-# 20. VALIDACIÓN DE NEGOCIO
-
-La validación sintáctica no es suficiente.
-
-Ejemplo:
-
-```text
-quantity = 1
-```
-
-puede ser técnicamente válido.
-
-Pero:
-
-```text
-stockAvailable = 0
-```
-
-hace que la operación sea inválida.
-
-Por eso deben existir:
-
-```text
-schema validation
-+
-business validation
-```
-
----
-
-# 21. SQL INJECTION
-
-No construir consultas SQL mediante concatenación insegura.
-
-Preferir:
-
-```text
-Prisma
-parameterized queries
-```
-
-No utilizar:
-
-```text
-"SELECT * FROM users WHERE id = " + userInput
-```
-
----
-
-# 22. XSS
-
-Los datos introducidos por usuarios no deben interpretarse automáticamente como HTML/JavaScript.
-
-Especial atención a:
-
-* nombres;
-* observaciones;
-* notas;
-* clientes;
-* proveedores;
-* productos;
-* comentarios.
-
-El frontend debe escapar/renderizar datos de manera segura.
-
----
-
-# 23. CSRF
-
-La estrategia depende del mecanismo de autenticación.
-
-Si se utilizan cookies autenticadas, debe contemplarse protección CSRF apropiada.
-
-Si se utiliza otro mecanismo, deben evaluarse sus riesgos equivalentes.
-
-No asumir que CORS reemplaza CSRF protection.
-
----
-
-# 24. CORS
-
-La API debe permitir solamente orígenes autorizados.
-
-Desarrollo:
-
-```text
-localhost
-```
-
-Producción:
-
-```text
-dominio oficial del frontend
-```
-
-No habilitar indiscriminadamente:
-
-```text
-*
-```
-
-en producción.
-
----
-
-# 25. HTTPS
-
-Toda comunicación de producción debe utilizar HTTPS.
-
-Especialmente:
-
-```text
-login
-ventas
-pagos
-clientes
-empleados
-cuentas
-facturación
-```
-
-Nunca transmitir credenciales mediante HTTP plano.
-
----
-
-# 26. SECURITY HEADERS
-
-El backend debe aplicar headers de seguridad apropiados.
-
-Por ejemplo:
-
-```text
-Content-Security-Policy
-X-Content-Type-Options
-Referrer-Policy
-```
-
-y otros según la arquitectura final.
-
-No agregar headers solamente por cumplir una checklist: deben configurarse correctamente para la aplicación.
-
----
-
-# 27. RATE LIMITING
-
-Debe existir protección contra abuso.
-
-Especialmente:
-
-```text
-login
-password recovery
-API pública
-webhooks
-endpoints sensibles
-```
-
-Ejemplo conceptual:
-
-```text
-muchos intentos fallidos
-       ↓
-rate limit
-       ↓
-bloqueo temporal / challenge
-```
-
-Los límites exactos se definirán durante hardening.
-
----
-
-# 28. LOGIN
-
-Debe registrarse información suficiente para detectar abusos.
-
-Ejemplos:
-
-```text
-login success
-login failure
-logout
-account blocked
-password changed
-session revoked
-```
-
-No registrar contraseñas.
-
----
-
-# 29. SECRETOS
-
-Nunca almacenar secretos dentro del repositorio.
-
-No subir:
-
-```text
-.env
-private keys
-ARCA credentials
-API keys
-database passwords
-JWT secrets
-```
-
-El repositorio debe contener:
-
-```text
-.env.example
-```
-
-sin valores sensibles.
-
----
-
-# 30. CREDENCIALES ARCA
-
-Las credenciales/certificados fiscales deben tratarse como secretos de infraestructura.
-
-Separar:
-
-```text
-DEMO
-HOMOLOGACIÓN
-PRODUCCIÓN
-```
-
-Nunca utilizar credenciales productivas en la demo.
-
----
-
-# 31. CERTIFICADOS
-
-Los certificados y claves privadas deben:
-
-* estar protegidos;
-* tener permisos restrictivos;
-* no exponerse al frontend;
-* no almacenarse en el repositorio;
-* utilizarse solamente desde backend/infrastructure.
-
----
-
-# 32. TOKENS
-
-Tokens de terceros deben:
-
-```text
-ser secretos
-tener alcance limitado cuando sea posible
-rotarse
-revocarse
-```
-
-Nunca enviarlos al navegador si no es necesario.
-
----
-
-# 33. DATOS SENSIBLES
-
-La aplicación debe minimizar la exposición de:
-
-* datos bancarios;
-* credenciales;
-* información fiscal;
-* información salarial;
-* información personal.
-
-Mostrar únicamente lo necesario.
-
-Ejemplo:
-
-```text
-Banco Galicia
-Alias: vm*******
-```
-
-en lugar de exponer innecesariamente todos los datos.
-
----
-
-# 34. EMPLEADOS
-
-Los datos de empleados requieren controles adicionales.
-
-Por ejemplo:
-
-```text
-salario
-adelantos
-deudas
-compras
-pagos
-```
-
-no deben estar disponibles para cualquier usuario.
-
----
-
-# 35. INFORMACIÓN FINANCIERA
-
-Las cuentas financieras deben tener permisos diferenciados.
-
-Ejemplo:
-
-```text
-Vendedor
-→ no necesita consultar tesorería global.
-
-Cajero
-→ necesita consultar movimientos de su caja.
-
-Tesorero
-→ necesita consultar y operar cuentas financieras.
-
-Administrador
-→ acceso según política.
-```
-
----
-
-# 36. STOCK
-
-No otorgar permiso general:
-
-```text
-inventory.adjust
-```
-
-a todos los usuarios.
-
-Un ajuste de stock debe:
-
-```text
-requerir permiso
-tener motivo
-registrar usuario
-registrar fecha
-registrar cantidad
-registrar referencia
-crear StockMovement
-```
-
----
-
-# 37. DINERO
+El backend deberá filtrar siempre los datos por empresa.
 
 Nunca permitir:
 
 ```text
-UPDATE financialAccount
-SET balance = ...
+SELECT * FROM sales WHERE id = :id
+```
+
+sin comprobar ownership/scope.
+
+Debe existir conceptualmente:
+
+```text
+companyId
++
+resourceId
+```
+
+como criterio de acceso.
+
+---
+
+# 15. AUTORIZACIÓN A NIVEL DE RECURSO
+
+No basta con permisos generales.
+
+Ejemplo:
+
+```text
+sales.read
+```
+
+no significa necesariamente:
+
+```text
+leer cualquier venta del sistema
+```
+
+Debe combinarse con:
+
+```text
+company scope
+branch scope
+ownership
+resource state
+permission
+```
+
+---
+
+# 16. OPERACIONES CRÍTICAS
+
+Las siguientes operaciones deberán recibir controles adicionales:
+
+* cierre de caja;
+* ajustes de stock;
+* devoluciones;
+* cambios especiales;
+* descuentos altos;
+* modificaciones de precios;
+* transferencias;
+* aprobación de compras;
+* pagos a proveedores;
+* movimientos de tesorería;
+* retiros de dinero;
+* depósitos;
+* ajustes financieros;
+* modificaciones salariales;
+* ventas a empleados;
+* facturación;
+* anulaciones;
+* acciones administrativas.
+
+Cuando corresponda deberá existir:
+
+```text
+requiere aprobación
+```
+
+o:
+
+```text
+requiere permiso elevado
+```
+
+---
+
+# 17. SEPARACIÓN POS / CAJA
+
+La arquitectura de seguridad debe mantener:
+
+```text
+POS
+≠
+CAJA
+```
+
+Un vendedor puede crear:
+
+```text
+Sale
+```
+
+pero no necesariamente:
+
+```text
+Payment
+```
+
+o:
+
+```text
+CashMovement
+```
+
+El backend deberá aplicar esta separación.
+
+---
+
+# 18. PROTECCIÓN DEL STOCK
+
+El usuario no debe poder ejecutar:
+
+```text
+UPDATE inventory SET quantity = 100
 ```
 
 como operación normal.
 
-El dinero debe modificarse mediante:
+El stock debe cambiar mediante movimientos.
+
+Ejemplo:
+
+```text
+TRANSFER_OUT
+SALE
+PURCHASE_RECEIPT
+RETURN
+ADJUSTMENT_IN
+ADJUSTMENT_OUT
+```
+
+Los ajustes deben requerir:
+
+```text
+permiso
+motivo
+usuario
+fecha
+referencia
+auditoría
+```
+
+---
+
+# 19. PROTECCIÓN DEL DINERO
+
+Los saldos financieros no deben ser editables directamente.
+
+No:
+
+```text
+account.balance = 500000
+```
+
+como operación de negocio.
+
+Debe existir:
 
 ```text
 FinancialMovement
 ```
 
-o el mecanismo transaccional correspondiente.
+que explique el cambio.
 
----
-
-# 38. CAJA
-
-No permitir modificar:
+Ejemplo:
 
 ```text
-expectedCash
-countedCash
-difference
-```
-
-sin dejar evidencia.
-
-El arqueo debe registrar:
-
-```text
-quién
-cuándo
-sesión
-efectivo contado
-esperado
-diferencia
+CASH_DEPOSIT
+TRANSFER
+SALE
+SUPPLIER_PAYMENT
+REFUND
+EXPENSE
 ```
 
 ---
 
-# 39. OPERACIONES HISTÓRICAS
+# 20. OPERACIONES HISTÓRICAS
 
-No permitir eliminar directamente:
-
-```text
-ventas
-pagos
-movimientos de stock
-movimientos financieros
-arqueos
-facturas
-transferencias
-```
-
-Una operación incorrecta debe corregirse mediante:
+Una operación finalizada no debe volver simplemente a:
 
 ```text
-operación compensatoria
+DRAFT
 ```
 
-cuando corresponda.
+para modificarla.
+
+Ejemplo:
+
+```text
+SALE = COMPLETED
+```
+
+No permitir:
+
+```text
+UPDATE sale
+SET total = ...
+```
+
+La corrección deberá realizarse mediante:
+
+```text
+devolución
+cambio
+nota de crédito
+movimiento compensatorio
+ajuste autorizado
+```
+
+según corresponda.
 
 ---
 
-# 40. AUDITORÍA
+# 21. VALIDACIÓN DE ENTRADAS
 
-Las operaciones críticas deben generar `AuditLog`.
+Todo dato proveniente del cliente debe considerarse no confiable.
 
-Como mínimo:
+Validar:
+
+* tipos;
+* formatos;
+* longitud;
+* rangos;
+* IDs;
+* cantidades;
+* precios;
+* fechas;
+* estados;
+* relaciones;
+* permisos;
+* reglas de negocio.
+
+Utilizar validación runtime.
+
+Ejemplo recomendado:
 
 ```text
-usuario
-acción
-entidad
-entityId
-fecha/hora
-company
-branch
-operationId
+Zod
 ```
 
-Cuando corresponda:
+o una solución equivalente.
 
-```text
-before
-after
-reason
-requestId
+TypeScript por sí solo no valida requests HTTP.
+
+---
+
+# 22. PROTECCIÓN CONTRA INYECCIÓN
+
+Las consultas a PostgreSQL deben utilizar:
+
+* Prisma;
+* queries parametrizadas;
+* validación;
+* parámetros seguros.
+
+Nunca concatenar directamente SQL con input del usuario.
+
+Evitar:
+
+```ts
+`SELECT * FROM users WHERE name = '${input}'`
 ```
 
 ---
 
-# 41. AUDITORÍA DE SEGURIDAD
+# 23. XSS
 
-Registrar eventos como:
+Todo contenido proveniente de usuarios debe tratarse como potencialmente peligroso.
+
+Especial atención a:
+
+* nombres;
+* observaciones;
+* comentarios;
+* clientes;
+* proveedores;
+* productos;
+* notas;
+* archivos;
+* campos HTML.
+
+React ya escapa contenido por defecto, pero no utilizar:
+
+```tsx
+dangerouslySetInnerHTML
+```
+
+sin sanitización explícita y justificada.
+
+---
+
+# 24. CSRF
+
+La estrategia dependerá del mecanismo de autenticación.
+
+Si se utilizan cookies autenticadas:
+
+* SameSite correctamente configurado;
+* Secure;
+* HttpOnly;
+* protección CSRF cuando corresponda.
+
+Si se utiliza autenticación basada en headers:
+
+```http
+Authorization: Bearer ...
+```
+
+deberá analizarse el riesgo de XSS/token theft y aplicarse una arquitectura apropiada.
+
+No mezclar mecanismos sin una razón clara.
+
+---
+
+# 25. CORS
+
+El backend no debe aceptar:
+
+```text
+Access-Control-Allow-Origin: *
+```
+
+en producción si la API utiliza credenciales o si no es estrictamente necesario.
+
+Configurar explícitamente:
+
+```text
+WEB_ORIGIN
+```
+
+por ambiente.
+
+Ejemplo:
+
+```text
+DEVELOPMENT
+http://localhost:5173
+
+PRODUCTION
+https://dominio-produccion.com
+```
+
+---
+
+# 26. HTTPS
+
+Producción deberá utilizar HTTPS.
+
+Nunca transmitir:
+
+* credenciales;
+* tokens;
+* datos financieros;
+* datos personales;
+* credenciales ARCA;
+
+por HTTP sin protección.
+
+---
+
+# 27. HEADERS DE SEGURIDAD
+
+El backend deberá utilizar headers de seguridad apropiados.
+
+Se recomienda utilizar una solución como:
+
+```text
+Helmet
+```
+
+y configurar según la arquitectura real.
+
+Contemplar:
+
+* Content-Security-Policy;
+* X-Content-Type-Options;
+* Referrer-Policy;
+* Frame protections;
+* políticas relacionadas con recursos.
+
+No copiar una CSP genérica sin probar el frontend.
+
+---
+
+# 28. RATE LIMITING
+
+Los endpoints sensibles deberán tener límites de frecuencia.
+
+Especialmente:
+
+```text
+/login
+/password-reset
+/refresh
+/webhooks
+```
+
+y endpoints administrativos sensibles.
+
+Ejemplo:
+
+```text
+múltiples intentos fallidos
+↓
+rate limit
+↓
+registro de evento
+```
+
+No utilizar rate limiting únicamente como mecanismo de seguridad; debe complementar autenticación y detección de abuso.
+
+---
+
+# 29. BLOQUEO Y ABUSO DE CUENTAS
+
+Contemplar:
+
+* múltiples intentos fallidos;
+* bloqueo temporal;
+* detección de abuso;
+* revocación de sesiones;
+* recuperación segura.
+
+Evitar respuestas que revelen información sensible.
+
+Por ejemplo, no indicar innecesariamente:
+
+```text
+"el usuario existe"
+```
+
+cuando se solicita recuperación de contraseña.
+
+---
+
+# 30. SECRETOS
+
+Nunca guardar secretos directamente en:
+
+```text
+Git
+```
+
+ni:
+
+```text
+.env
+```
+
+versionado.
+
+Ejemplos:
+
+```text
+DATABASE_URL
+JWT_SECRET
+SESSION_SECRET
+ARCA_CERTIFICATE
+ARCA_PRIVATE_KEY
+API_KEYS
+WEBHOOK_SECRET
+```
+
+deben gestionarse mediante variables de entorno o secret management.
+
+---
+
+# 31. .ENV
+
+Repositorio:
+
+```text
+.env.example
+```
+
+Sí.
+
+Repositorio:
+
+```text
+.env
+```
+
+No.
+
+Ejemplo:
+
+```env
+DATABASE_URL=
+JWT_SECRET=
+ARCA_ENV=
+ARCA_CERT_PATH=
+ARCA_KEY_PATH=
+WEB_ORIGIN=
+```
+
+Nunca colocar valores reales en `.env.example`.
+
+---
+
+# 32. CREDENCIALES ARCA
+
+Las credenciales y certificados de ARCA deberán estar completamente aislados del frontend.
+
+Nunca:
+
+```text
+React → ARCA directamente
+```
+
+Debe existir:
+
+```text
+Frontend
+   ↓
+Backend
+   ↓
+FiscalProvider
+   ↓
+ARCAAdapter
+   ↓
+ARCA
+```
+
+Las claves privadas y certificados deben permanecer exclusivamente en backend/infraestructura segura.
+
+---
+
+# 33. DATOS SENSIBLES
+
+El sistema debe minimizar la exposición de:
+
+* contraseñas;
+* tokens;
+* certificados;
+* claves privadas;
+* información bancaria;
+* datos salariales;
+* información personal;
+* documentos;
+* datos de clientes.
+
+Cuando se muestran datos sensibles:
+
+```text
+mostrar solamente lo necesario
+```
+
+Ejemplo:
+
+```text
+Cuenta: ****1234
+```
+
+en lugar de exponer información completa sin necesidad.
+
+---
+
+# 34. LOGS
+
+Diferenciar:
+
+```text
+Application Logs
+```
+
+de:
+
+```text
+Audit Logs
+```
+
+Los logs técnicos sirven para:
+
+* errores;
+* performance;
+* debugging;
+* infraestructura;
+* requests.
+
+Los AuditLog sirven para:
+
+* quién;
+* qué;
+* cuándo;
+* dónde;
+* por qué;
+* sobre qué entidad;
+* resultado.
+
+No utilizar un único sistema para ambas funciones.
+
+---
+
+# 35. NO REGISTRAR SECRETOS
+
+Nunca escribir en logs:
+
+```text
+password
+JWT
+refreshToken
+privateKey
+ARCA credentials
+full card data
+```
+
+Los datos sensibles deberán:
+
+* omitirse;
+* enmascararse;
+* truncarse;
+* anonimizarse cuando corresponda.
+
+---
+
+# 36. AUDITORÍA DE SEGURIDAD
+
+Los eventos relevantes deberán registrarse.
+
+Ejemplos:
 
 ```text
 LOGIN_SUCCESS
@@ -950,168 +1174,51 @@ LOGIN_FAILED
 LOGOUT
 PASSWORD_CHANGED
 SESSION_REVOKED
+PERMISSION_DENIED
 USER_CREATED
-USER_DISABLED
-ROLE_CHANGED
-PERMISSION_CHANGED
+USER_ROLE_CHANGED
+USER_BRANCH_CHANGED
 ```
+
+Además de los eventos de negocio definidos en:
+
+`21_AUDITORIA_Y_TRAZABILIDAD.md`
 
 ---
 
-# 42. AUDITORÍA DE NEGOCIO
+# 37. AUDITORÍA DE OPERACIONES CRÍTICAS
 
-También:
-
-```text
-SALE_CREATED
-SALE_FINALIZED
-SALE_CANCELLED
-PAYMENT_CREATED
-CASH_OPENED
-CASH_CLOSED
-STOCK_ADJUSTED
-TRANSFER_DISPATCHED
-TRANSFER_RECEIVED
-RESERVATION_CREATED
-RESERVATION_CANCELLED
-LOAN_CREATED
-EXCHANGE_CREATED
-INVOICE_AUTHORIZED
-```
-
-La lista definitiva seguirá el módulo de auditoría.
-
----
-
-# 43. LOGS ≠ AUDITLOG
-
-Son conceptos distintos.
-
-### Application Log
-
-Sirve para:
+Ejemplo:
 
 ```text
-errores técnicos
-performance
-debugging
-requests
-infraestructura
-```
-
-### AuditLog
-
-Sirve para:
-
-```text
-responsabilidad
-trazabilidad
-operaciones de negocio
-seguridad
-```
-
-No utilizar uno como sustituto del otro.
-
----
-
-# 44. PII
-
-Los datos personales deben tratarse con minimización.
-
-No mostrar información personal innecesariamente en:
-
-```text
-logs
-errores
-pantallas
-exports
-```
-
----
-
-# 45. EXPORTACIONES
-
-Los reportes exportados pueden contener información sensible.
-
-Por lo tanto:
-
-```text
-exportación
+VENDEDOR
  ↓
-permission
+intenta cancelar venta
  ↓
-generación
+403 FORBIDDEN
  ↓
-audit
+AuditLog
+ ↓
+PERMISSION_DENIED
 ```
 
-Debe registrarse:
-
-```text
-quién exportó
-qué reporte
-qué filtros
-cuándo
-```
-
-según el nivel de auditoría definido.
+Debe quedar evidencia suficiente para investigar intentos de abuso.
 
 ---
 
-# 46. ARCHIVOS
+# 38. IDEMPOTENCIA
 
-Los documentos adjuntos deben controlarse.
+Operaciones sensibles deberán soportar idempotencia cuando exista riesgo de repetición.
 
-Ejemplos:
+Especialmente:
 
-```text
-facturas
-remitos
-comprobantes
-documentos
-```
-
-Validar:
-
-* tipo;
-* tamaño;
-* nombre;
-* almacenamiento;
-* permisos de acceso.
-
-Nunca confiar únicamente en la extensión del archivo.
-
----
-
-# 47. WEBHOOKS
-
-Los webhooks externos deben validarse.
-
-Cuando el proveedor lo permita:
-
-```text
-firma
-secret
-timestamp
-idempotency
-```
-
-No procesar cualquier request simplemente porque conoce el endpoint.
-
----
-
-# 48. IDEMPOTENCIA Y SEGURIDAD
-
-Una request repetida puede provocar:
-
-```text
-doble pago
-doble venta
-doble movimiento
-doble factura
-```
-
-Por eso las operaciones críticas deben tener mecanismos de idempotencia.
+* pagos;
+* facturación;
+* transferencias;
+* recepción de mercadería;
+* movimientos financieros;
+* webhooks;
+* operaciones externas.
 
 Ejemplo:
 
@@ -1119,554 +1226,1501 @@ Ejemplo:
 Idempotency-Key
 ```
 
+Si el cliente reintenta una operación por timeout, no debe duplicarse.
+
 ---
 
-# 49. CONCURRENCIA
+# 39. CONCURRENCIA
 
-La seguridad también incluye consistencia.
+Las operaciones críticas deberán ejecutarse con control de concurrencia.
 
 Ejemplo:
 
-```text
-Stock = 1
-```
-
-Dos POS realizan simultáneamente:
+Dos vendedores intentan vender simultáneamente:
 
 ```text
-venta = 1
+última unidad disponible
 ```
 
-El sistema debe garantizar que no se produzca:
+El sistema debe impedir:
 
 ```text
 stock = -1
 ```
 
+y evitar doble venta.
+
+Esto debe resolverse en backend + PostgreSQL mediante:
+
+* transacciones;
+* constraints;
+* locking/versionado cuando corresponda;
+* validación dentro de la transacción.
+
 ---
 
-# 50. CONTROL DE ESTADOS
+# 40. TRANSACCIONES
 
-No aceptar cambios de estado arbitrarios enviados desde frontend.
+Las operaciones que modifiquen múltiples entidades deben ser atómicas.
+
+Ejemplo de venta:
+
+```text
+Sale
++
+SaleItem
++
+Payment
++
+StockMovement
++
+FinancialMovement
++
+Invoice
++
+AuditLog
+```
+
+No debe quedar una venta pagada sin movimiento de stock por una excepción intermedia.
+
+La estrategia exacta dependerá de qué integración sea externa.
+
+Para ARCA:
+
+```text
+DB transaction
+≠
+transacción externa ARCA
+```
+
+La integración fiscal debe diseñarse para tolerar:
+
+* timeout;
+* retry;
+* respuesta desconocida;
+* duplicación;
+* recuperación.
+
+---
+
+# 41. ARCHIVOS Y DOCUMENTOS
+
+Los archivos subidos deben validarse.
+
+Controlar:
+
+* extensión;
+* MIME type;
+* tamaño;
+* nombre;
+* contenido;
+* almacenamiento;
+* permisos de acceso.
+
+No confiar solamente en:
+
+```text
+filename.pdf
+```
+
+para determinar el tipo real.
+
+Los archivos privados no deben quedar públicamente accesibles por URL permanente sin autorización.
+
+---
+
+# 42. WEBHOOKS
+
+Los webhooks externos deben verificarse.
+
+Cuando el proveedor lo soporte:
+
+```text
+firma
++
+timestamp
++
+secret
++
+anti-replay
+```
+
+No aceptar un webhook únicamente porque llegó a:
+
+```text
+POST /webhook
+```
+
+Registrar:
+
+```text
+provider
+eventId
+signature result
+receivedAt
+processedAt
+status
+```
+
+---
+
+# 43. INTEGRIDAD DE BASE DE DATOS
+
+La seguridad también debe existir en PostgreSQL.
+
+Utilizar:
+
+* foreign keys;
+* unique constraints;
+* check constraints cuando corresponda;
+* NOT NULL;
+* índices adecuados;
+* transacciones;
+* tipos correctos.
+
+La aplicación no debe ser la única barrera contra datos inválidos.
+
+---
+
+# 44. DINERO Y PRECISIÓN
+
+Nunca utilizar `float` para representar dinero.
+
+Utilizar:
+
+```text
+Decimal
+```
+
+o equivalente.
+
+Ejemplo conceptual:
+
+```text
+Decimal(14,2)
+```
+
+La precisión exacta deberá definirse en el modelo de datos.
+
+---
+
+# 45. CONTROL DE STOCK
+
+Nunca confiar en:
+
+```text
+frontend stock = 1
+```
+
+como autorización de venta.
+
+El backend debe volver a comprobar el stock durante la operación.
+
+Flujo:
+
+```text
+Frontend
+ ↓
+"hay 1 unidad"
+ ↓
+Backend consulta estado real
+ ↓
+valida
+ ↓
+transaction
+ ↓
+reserva/descuenta
+```
+
+---
+
+# 46. PROTECCIÓN CONTRA DOBLE ENVÍO
+
+Los botones críticos deben manejar estados:
+
+```text
+idle
+processing
+success
+error
+```
+
+Pero nuevamente:
+
+> La protección real debe existir en backend mediante idempotencia/transacciones.
+
+No depender solamente de:
+
+```text
+disabled
+```
+
+en React.
+
+---
+
+# 47. CONTROL DE PERMISOS EN FRONTEND
+
+El frontend deberá adaptar la interfaz al usuario.
+
+Ejemplo:
+
+```text
+Vendedor:
+[ Nueva venta ]
+[ Reservar ]
+[ Consultar stock ]
+```
+
+No mostrar:
+
+```text
+[ Cerrar caja ]
+[ Ajustar tesorería ]
+[ Configuración ARCA ]
+```
+
+si no posee permisos.
+
+Pero aunque el botón no exista, el backend debe rechazar la acción si se intenta manualmente.
+
+---
+
+# 48. ESCALAMIENTO DE PRIVILEGIOS
+
+Debe evitarse que un usuario pueda modificarse a sí mismo:
+
+```text
+role = SUPER_ADMIN
+```
+
+o:
+
+```text
+permissions = ["*"]
+```
+
+sin autorización.
+
+Los cambios de:
+
+* rol;
+* permisos;
+* sucursal;
+* alcance;
+
+deben requerir privilegios administrativos.
+
+Los cambios deben quedar auditados.
+
+---
+
+# 49. PROTECCIÓN DE ADMINISTRADORES
+
+Las cuentas administrativas deberán tener controles adicionales cuando la infraestructura lo permita.
+
+Recomendado para producción:
+
+```text
+MFA
+```
+
+especialmente para:
+
+* SUPER_ADMIN;
+* ADMIN;
+* TESORERIA;
+* usuarios con acceso fiscal;
+* administración de usuarios/permisos.
+
+---
+
+# 50. SEPARACIÓN DE AMBIENTES
+
+Debe existir separación clara:
+
+```text
+DEVELOPMENT
+STAGING
+PRODUCTION
+```
+
+Nunca reutilizar:
+
+```text
+credenciales de producción
+```
+
+en desarrollo.
+
+Nunca conectar la demo directamente a:
+
+```text
+ARCA PRODUCCIÓN
+```
+
+---
+
+# 51. ARCA DEMO
+
+Durante el desarrollo/demo:
+
+```text
+FiscalProvider
+      ↓
+MockFiscalProvider
+```
+
+No utilizar credenciales reales.
+
+La interfaz deberá indicar claramente:
+
+```text
+CAE SIMULADO
+```
+
+y:
+
+```text
+COMPROBANTE DEMOSTRATIVO
+SIN VALIDEZ FISCAL
+```
+
+---
+
+# 52. BASE DE DATOS DE PRODUCCIÓN
+
+La base de producción debe:
+
+* tener credenciales independientes;
+* no ser accesible públicamente sin necesidad;
+* utilizar conexiones seguras;
+* tener backups;
+* tener política de restauración;
+* limitar permisos del usuario de aplicación.
+
+El usuario de aplicación no debería utilizar una cuenta PostgreSQL con privilegios administrativos innecesarios.
+
+---
+
+# 53. BACKUPS
+
+La seguridad de datos requiere backups.
+
+Contemplar:
+
+```text
+backup
++
+verificación
++
+restauración
+```
+
+Un backup que nunca fue restaurado/testeado no debe considerarse completamente confiable.
+
+La política concreta de:
+
+* frecuencia;
+* retención;
+* RPO;
+* RTO;
+
+se define en:
+
+`27_INFRAESTRUCTURA_Y_DEPLOYMENT.md`
+
+---
+
+# 54. DEPENDENCIAS
+
+El proyecto deberá controlar dependencias vulnerables.
+
+Utilizar herramientas del ecosistema Node/npm para:
+
+```text
+audit
+```
+
+y actualizar dependencias regularmente.
+
+Evitar paquetes abandonados o innecesarios.
+
+No agregar una dependencia únicamente porque simplifica unas pocas líneas.
+
+---
+
+# 55. SUPPLY CHAIN
+
+Para dependencias críticas:
+
+* revisar mantenimiento;
+* verificar procedencia;
+* evitar paquetes sospechosos;
+* bloquear versiones cuando sea conveniente;
+* revisar cambios importantes;
+* utilizar lockfile.
+
+Repositorio:
+
+```text
+package-lock.json
+```
+
+o equivalente deberá mantenerse bajo control de versiones.
+
+---
+
+# 56. PROTECCIÓN DE LA API
+
+La API deberá contemplar:
+
+```text
+Authentication
+Authorization
+Validation
+Rate Limiting
+CORS
+Security Headers
+Logging
+Audit
+Idempotency
+Error Handling
+```
+
+No exponer endpoints administrativos sin protección.
+
+---
+
+# 57. RESPUESTAS DE ERROR
+
+No devolver información interna al cliente.
 
 Incorrecto:
 
-```text
-PATCH sale
+```json
 {
-  "status": "PAID"
+  "error": "PrismaClientKnownRequestError: SELECT ..."
 }
 ```
 
 Correcto:
 
-```text
-POST /sales/:id/finalize
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "No tiene permisos para realizar esta operación."
+  }
+}
 ```
 
-El backend determina si la transición es válida.
+Los detalles técnicos deben quedar en logs internos.
 
 ---
 
-# 51. PERMISOS PARA EXCEPCIONES
+# 58. CÓDIGOS HTTP
 
-Las excepciones deben requerir permisos especiales.
+Utilizar códigos HTTP coherentes.
 
 Ejemplos:
 
 ```text
-descuento extraordinario
-ajuste de stock
-anulación de venta
-devolución fuera de política
-retiro extraordinario de caja
-modificación financiera
+400 Bad Request
+401 Unauthorized
+403 Forbidden
+404 Not Found
+409 Conflict
+422 Unprocessable Entity
+429 Too Many Requests
+500 Internal Server Error
 ```
-
----
-
-# 52. DOBLE AUTORIZACIÓN
-
-Para determinadas operaciones críticas puede implementarse:
-
-```text
-usuario ejecuta
-      ↓
-requiere aprobación
-      ↓
-usuario autorizado aprueba
-      ↓
-operación ejecutada
-```
-
-Esto puede utilizarse posteriormente para:
-
-* movimientos financieros importantes;
-* ajustes;
-* descuentos especiales;
-* anulaciones;
-* operaciones administrativas.
-
-Los umbrales deben ser definidos por el negocio.
-
----
-
-# 53. PROTECCIÓN CONTRA FRAUDE
-
-El sistema debe conservar señales suficientes para detectar comportamientos anómalos.
-
-Ejemplos:
-
-```text
-muchas anulaciones
-muchos descuentos
-muchos ajustes
-muchos retiros
-muchas devoluciones
-```
-
-La primera versión solamente necesita registrar los datos.
-
-Detección automática puede incorporarse posteriormente.
-
----
-
-# 54. AUDITORÍA DE CAMBIOS DE PERMISOS
-
-Un cambio de permisos es crítico.
-
-Registrar:
-
-```text
-actor
-usuario afectado
-rol anterior
-rol nuevo
-permisos anteriores
-permisos nuevos
-fecha
-motivo
-```
-
-No modificar silenciosamente permisos.
-
----
-
-# 55. PROTECCIÓN DE ADMINISTRADORES
-
-Las cuentas administrativas deben tener controles reforzados.
-
-Evitar compartir:
-
-```text
-admin/admin
-```
-
-o cuentas genéricas.
-
-Cada persona debe tener su propia identidad.
-
----
-
-# 56. CUENTAS COMPARTIDAS
 
 No utilizar:
 
 ```text
-cajero
-vendedor
-admin
+200 OK
 ```
 
-como usuarios compartidos en producción.
-
-La trazabilidad requiere saber:
-
-```text
-PERSONA REAL
-```
-
-que ejecutó la operación.
+para indicar errores de autorización o validación.
 
 ---
 
-# 57. BACKUPS
+# 59. 401 VS 403
 
-Los backups deben protegerse igual que la base de datos.
-
-Contemplar:
+Diferenciar:
 
 ```text
-acceso restringido
-cifrado cuando corresponda
-control de acceso
-restauración
+401
 ```
 
-No almacenar backups sensibles en ubicaciones públicas.
+cuando la identidad no está autenticada.
 
----
-
-# 58. RESTORE TEST
-
-Un backup no se considera suficiente hasta comprobar que puede restaurarse.
-
-Proceso:
+Y:
 
 ```text
-Backup
- ↓
-Restore
- ↓
-Validation
- ↓
-Successful
+403
 ```
 
-La frecuencia exacta se definirá en infraestructura.
+cuando el usuario está autenticado pero no tiene autorización.
 
----
-
-# 59. DEPENDENCIAS
-
-Mantener dependencias actualizadas.
-
-Utilizar:
+Ejemplo:
 
 ```text
-npm audit
-dependabot / equivalente
-lockfile
+Usuario no autenticado
+→ 401
 ```
 
-cuando corresponda.
-
-No instalar paquetes innecesarios.
-
----
-
-# 60. SUPPLY CHAIN
-
-Antes de incorporar una dependencia:
-
 ```text
-¿Es necesaria?
-¿Está mantenida?
-¿Tiene historial razonable?
-¿Tiene vulnerabilidades conocidas?
-¿Necesita permisos excesivos?
-```
-
-Evitar dependencias desconocidas para funciones críticas.
-
----
-
-# 61. FRONTEND
-
-Nunca asumir que ocultar un botón constituye seguridad.
-
-Esto:
-
-```text
-if (!canCloseCash) {
-   hideButton()
-}
-```
-
-sirve para UX.
-
-Pero debe existir además:
-
-```text
-backend authorization
+Vendedor intenta cerrar caja
+→ 403
 ```
 
 ---
 
-# 62. BACKEND
+# 60. PRINCIPIO DE NO EXPOSICIÓN
 
-Toda operación sensible debe verificar:
+La API no deberá devolver información que el usuario no necesita.
+
+Ejemplo:
+
+Un vendedor no debería recibir:
 
 ```text
-authenticated
-authorized
-scoped
-valid
+salary
+bankAccount
+treasuryBalance
+internalCost
+supplierPayment
 ```
 
-antes de ejecutarse.
+si no posee autorización para ello.
+
+La seguridad debe controlar también:
+
+```text
+qué campos puede leer
+```
+
+cuando sea necesario.
 
 ---
 
-# 63. DATABASE
+# 61. SEGURIDAD DE REPORTES
 
-La aplicación debe utilizar un usuario de base de datos con los permisos necesarios.
+Los reportes también deben respetar scope.
 
-No utilizar innecesariamente una cuenta con privilegios administrativos completos.
+Ejemplo:
+
+```text
+Vendedor
+```
+
+no debe descargar:
+
+```text
+ventas globales de todas las sucursales
+```
+
+si no tiene permiso.
+
+La misma regla aplica a:
+
+```text
+CSV
+XLSX
+PDF
+```
+
+y cualquier exportación.
 
 ---
 
-# 64. PRODUCCIÓN VS DEMO
+# 62. SEGURIDAD DE TESORERÍA
 
-### DEMO
+Tesorería debe considerarse un dominio altamente sensible.
 
-Puede utilizar:
-
-```text
-mock users
-fake credentials
-simulated fiscal data
-localStorage
-mock API
-```
-
-Pero debe quedar claramente identificado.
-
-### PRODUCCIÓN
-
-Debe utilizar:
+Las operaciones como:
 
 ```text
-real authentication
-real database
-secure secrets
-HTTPS
-audit
-backup
-RBAC
-real integrations
+TRANSFER
+SUPPLIER_PAYMENT
+EXPENSE
+CASH_DEPOSIT
+CASH_WITHDRAWAL
+ADJUSTMENT
 ```
+
+deberán requerir permisos adecuados.
+
+Las operaciones de alto riesgo podrán requerir:
+
+```text
+aprobación
+```
+
+según las reglas definidas en módulos anteriores.
 
 ---
 
-# 65. DATOS DE DEMO
+# 63. SEGURIDAD DE CAJA
 
-Nunca cargar datos reales del cliente en:
+Un cajero puede operar únicamente la caja/sesión correspondiente a su alcance.
+
+No debe poder:
 
 ```text
-repositorio
-capturas públicas
-demo pública
-logs
-fixtures públicos
+cerrar caja de otra sucursal
 ```
 
-La demo debe utilizar datos ficticios.
+sin autorización.
 
----
-
-# 66. CHECKLIST DE SEGURIDAD PRE-PRODUCCIÓN
+El cierre debe validar:
 
 ```text
-[ ] HTTPS
-[ ] Authentication
-[ ] Password hashing
-[ ] Session management
-[ ] RBAC
-[ ] Branch scoping
-[ ] Company scoping
-[ ] Input validation
-[ ] Business validation
-[ ] CORS
-[ ] CSRF strategy
-[ ] Security headers
-[ ] Rate limiting
-[ ] Secret management
-[ ] ARCA credentials protected
-[ ] AuditLog
-[ ] Application logging
-[ ] Idempotency
-[ ] Concurrency controls
-[ ] Database permissions
-[ ] Backup
-[ ] Restore test
-[ ] Dependency audit
-[ ] Error handling
-[ ] Export permissions
-[ ] File upload security
-[ ] Webhook verification
-```
-
----
-
-# 67. CHECKLIST DE AUTORIZACIÓN
-
-Para cada endpoint crítico:
-
-```text
-[ ] ¿Requiere autenticación?
-[ ] ¿Qué permiso requiere?
-[ ] ¿Qué rol puede ejecutarlo?
-[ ] ¿Qué sucursales puede afectar?
-[ ] ¿Puede afectar otra empresa?
-[ ] ¿Requiere aprobación?
-[ ] ¿Genera auditoría?
-[ ] ¿Es idempotente?
-[ ] ¿Es transaccional?
+cashRegister
++
+session
++
+branch
++
+user
++
+state
 ```
 
 ---
 
-# 68. MODELO DE AMENAZAS MÍNIMO
+# 64. SEGURIDAD DE TRANSFERENCIAS
 
-Se deben contemplar al menos:
-
-```text
-Credenciales robadas
-Usuario interno malicioso
-Usuario con permisos excesivos
-IDOR
-SQL Injection
-XSS
-CSRF
-Brute Force
-Replay
-Double Submit
-Data Leakage
-Secret Leakage
-Malicious File Upload
-Webhook Spoofing
-Concurrent Operations
-```
-
----
-
-# 69. PRINCIPIO ZERO TRUST
-
-No asumir:
+Una transferencia entre sucursales debe validar:
 
 ```text
-"Está dentro de la red, entonces es confiable."
-```
-
-Cada request debe validarse según:
-
-```text
-identidad
-permisos
-contexto
-recurso
-operación
-```
-
----
-
-# 70. REGLA DE SEGURIDAD PARA EL SISTEMA
-
-Para toda operación importante:
-
-```text
-¿QUIÉN?
-   ↓
-¿QUÉ PERMISO TIENE?
-   ↓
-¿SOBRE QUÉ EMPRESA?
-   ↓
-¿SOBRE QUÉ SUCURSAL?
-   ↓
-¿QUÉ QUIERE HACER?
-   ↓
-¿EL ESTADO LO PERMITE?
-   ↓
-¿LA OPERACIÓN ES VÁLIDA?
-   ↓
-¿DEBE APROBARSE?
-   ↓
-¿QUÉ MOVIMIENTOS GENERA?
-   ↓
-¿QUÉ AUDITORÍA DEJA?
-```
-
----
-
-# 71. REGLA DE ORO
-
-Ningún usuario debe poder producir un cambio crítico simplemente manipulando:
-
-```text
-frontend
-request
-JSON
-URL
-ID
+origin
+destination
+user scope
 status
-price
-quantity
-branchId
-companyId
+stock
+authorization
 ```
 
-El backend debe reconstruir y validar el contexto real.
-
----
-
-# 72. DEFINITION OF DONE — SEGURIDAD
-
-El módulo de seguridad se considera implementado cuando:
-
-* [ ] autenticación funcional;
-* [ ] contraseñas protegidas;
-* [ ] sesiones controladas;
-* [ ] RBAC implementado;
-* [ ] permisos granulares;
-* [ ] alcance por empresa;
-* [ ] alcance por sucursal;
-* [ ] validación backend;
-* [ ] protección de endpoints;
-* [ ] auditoría;
-* [ ] protección de secretos;
-* [ ] HTTPS en producción;
-* [ ] rate limiting;
-* [ ] estrategia CSRF;
-* [ ] seguridad de archivos;
-* [ ] protección de webhooks;
-* [ ] idempotencia;
-* [ ] controles de concurrencia;
-* [ ] backups;
-* [ ] restore probado.
-
----
-
-# 73. PRINCIPIO FINAL
-
-> **La seguridad no consiste en esconder botones. Consiste en impedir operaciones no autorizadas incluso cuando el cliente intenta manipular directamente la API.**
-
-El sistema debe asumir que el frontend puede ser alterado, las requests pueden repetirse y los usuarios pueden intentar ejecutar operaciones fuera de su alcance.
-
-Por eso:
+No permitir que un usuario modifique arbitrariamente:
 
 ```text
-Frontend
-   ↓
-UX
-
-Backend
-   ↓
-Security + Business Rules
-
-Database
-   ↓
-Integrity
-
-Audit
-   ↓
-Evidence
+originBranch
+destinationBranch
 ```
 
-La arquitectura debe garantizar que una operación crítica solamente pueda ocurrir cuando:
+una vez despachada.
+
+---
+
+# 65. SEGURIDAD DE RESERVAS
+
+Las reservas deben validar:
+
+* usuario;
+* sucursal;
+* stock;
+* estado;
+* vencimiento;
+* cliente;
+* depósito/seña.
+
+No permitir liberar stock de una reserva ajena sin autorización.
+
+---
+
+# 66. SEGURIDAD DE PRÉSTAMOS
+
+Los préstamos de publicidad/contenido deben registrar:
+
+```text
+responsable
+producto
+origen
+destino
+fecha
+motivo
+estado
+```
+
+No permitir marcar:
+
+```text
+RETURNED
+```
+
+sin que exista una operación de devolución válida.
+
+---
+
+# 67. SEGURIDAD DE CAMBIOS Y DEVOLUCIONES
+
+No permitir una devolución arbitraria.
+
+Debe existir:
+
+```text
+originalSaleId
++
+originalSaleItemId
++
+cantidad disponible para devolver
++
+motivo
++
+usuario
++
+autorización cuando corresponda
+```
+
+Nunca permitir:
+
+```text
+devolver 2
+```
+
+si solamente se vendió:
+
+```text
+1
+```
+
+---
+
+# 68. SEGURIDAD DE EMPLEADOS
+
+Los datos de empleados requieren acceso restringido.
+
+Especialmente:
+
+* salarios;
+* adelantos;
+* descuentos;
+* cuentas;
+* información personal.
+
+Un vendedor normal no debe acceder al módulo salarial.
+
+---
+
+# 69. SEGURIDAD DE VENTAS A EMPLEADOS
+
+Las ventas a empleados deben validar:
+
+```text
+employeeId
+active employee
+price policy
+discount policy
+authorization
+payment/debt policy
+```
+
+No permitir seleccionar cualquier `employeeId` y asignar precio especial.
+
+---
+
+# 70. SEGURIDAD FISCAL
+
+Las operaciones fiscales deben:
+
+* mantener numeración controlada;
+* impedir duplicados;
+* registrar respuesta de ARCA;
+* registrar CAE cuando corresponda;
+* manejar errores;
+* utilizar idempotencia;
+* mantener trazabilidad.
+
+No permitir editar manualmente un CAE.
+
+---
+
+# 71. CORRELACIÓN DE OPERACIONES
+
+Las operaciones importantes deberán utilizar identificadores de correlación.
+
+Ejemplo:
+
+```text
+operationId
+requestId
+correlationId
+```
+
+Esto permite reconstruir:
+
+```text
+Request
+ ↓
+Controller
+ ↓
+Service
+ ↓
+DB Transaction
+ ↓
+FinancialMovement
+ ↓
+StockMovement
+ ↓
+AuditLog
+```
+
+---
+
+# 72. OBSERVABILIDAD
+
+Producción debe permitir detectar:
+
+* errores;
+* accesos rechazados;
+* errores de autorización;
+* fallos de integraciones;
+* operaciones lentas;
+* excepciones;
+* fallos de DB;
+* fallos de facturación.
+
+Nunca almacenar datos sensibles innecesarios para lograrlo.
+
+---
+
+# 73. ZERO TRUST
+
+El sistema debe asumir:
+
+> Ninguna solicitud es confiable solamente porque provenga de la aplicación.
+
+Cada request deberá validarse.
+
+Conceptualmente:
+
+```text
+Request
+ ↓
+¿Autenticado?
+ ↓
+¿Usuario activo?
+ ↓
+¿Permiso?
+ ↓
+¿Company scope?
+ ↓
+¿Branch scope?
+ ↓
+¿Recurso válido?
+ ↓
+¿Estado válido?
+ ↓
+¿Regla de negocio?
+ ↓
+¿Transacción segura?
+ ↓
+EXECUTE
+```
+
+---
+
+# 74. CHECKLIST DE AUTORIZACIÓN
+
+Antes de implementar una acción crítica, OpenCode deberá responder:
+
+```text
+1. ¿Quién puede ejecutarla?
+2. ¿Qué permiso requiere?
+3. ¿En qué empresa?
+4. ¿En qué sucursal?
+5. ¿Sobre qué recurso?
+6. ¿En qué estado debe estar?
+7. ¿Requiere aprobación?
+8. ¿Qué datos puede modificar?
+9. ¿Qué movimientos genera?
+10. ¿Qué queda auditado?
+11. ¿Puede repetirse?
+12. ¿Qué ocurre si dos usuarios la ejecutan simultáneamente?
+13. ¿Qué ocurre ante un timeout?
+14. ¿Cómo se revierte?
+```
+
+Si estas preguntas no tienen respuesta, la operación no está suficientemente definida.
+
+---
+
+# 75. SECURITY BY DESIGN
+
+La seguridad deberá incorporarse desde el diseño.
+
+No:
+
+```text
+desarrollar todo
+↓
+agregar seguridad al final
+```
+
+Sino:
+
+```text
+diseñar
+↓
+autorizar
+↓
+validar
+↓
+implementar
+↓
+testear
+```
+
+---
+
+# 76. TESTS DE SEGURIDAD
+
+Como mínimo deberán existir pruebas para:
+
+### Autenticación
+
+```text
+login válido
+login inválido
+sesión expirada
+sesión revocada
+password change
+```
+
+### Autorización
+
+```text
+vendedor → cerrar caja = DENIED
+vendedor → modificar stock = DENIED
+cajero → modificar salario = DENIED
+```
+
+### Scope
+
+```text
+Sucursal A → acceder venta B = DENIED
+Sucursal A → stock B = DENIED
+```
+
+### IDOR
+
+```text
+GET /sales/:id
+```
+
+con ID perteneciente a otra sucursal:
+
+```text
+403/404 según estrategia
+```
+
+---
+
+# 77. TESTS DE CONCURRENCIA
+
+Probar:
+
+```text
+dos ventas
+última unidad
+```
+
+Resultado esperado:
+
+```text
+una operación exitosa
+otra rechazada
+```
+
+No:
+
+```text
+stock negativo
+```
+
+---
+
+# 78. TESTS DE IDEMPOTENCIA
+
+Ejemplo:
+
+```text
+POST /payments
+Idempotency-Key: ABC123
+```
+
+enviado dos veces.
+
+Resultado:
+
+```text
+1 payment
+1 financial movement
+```
+
+No:
+
+```text
+2 payments
+2 movements
+```
+
+---
+
+# 79. TESTS DE PERMISOS
+
+Debe existir una matriz de pruebas:
+
+| Acción           | Vendedor |    Cajero |      Encargado | Admin |
+| ---------------- | -------: | --------: | -------------: | ----: |
+| Crear venta      |        ✅ | según rol |              ✅ |     ✅ |
+| Finalizar pago   |        ❌ |         ✅ | según política |     ✅ |
+| Cerrar caja      |        ❌ |         ✅ |              ✅ |     ✅ |
+| Ajustar stock    |        ❌ |         ❌ |  según permiso |     ✅ |
+| Ver tesorería    |        ❌ |         ❌ |  según permiso |     ✅ |
+| Cambiar permisos |        ❌ |         ❌ |              ❌ |     ✅ |
+| Ver salarios     |        ❌ |         ❌ |  según permiso |     ✅ |
+
+La matriz final debe coincidir con `02_ROLES_Y_PERMISOS.md`.
+
+---
+
+# 80. SEGURIDAD EN DEMO
+
+Aunque sea una demo:
+
+Debe existir:
+
+* login o mecanismo de acceso simulado;
+* roles;
+* permisos;
+* separación de sucursales;
+* datos ficticios;
+* CAE simulado;
+* credenciales falsas;
+* ausencia de secretos reales.
+
+La demo nunca debe contener:
+
+```text
+credenciales reales
+certificados reales
+clientes reales
+datos bancarios reales
+```
+
+---
+
+# 81. DIFERENCIA DEMO VS PRODUCCIÓN
+
+| Área           | Demo             | Producción               |
+| -------------- | ---------------- | ------------------------ |
+| Auth           | Simplificada     | Completa                 |
+| RBAC           | Sí               | Sí                       |
+| Scope          | Sí               | Sí                       |
+| PostgreSQL     | Opcional         | Obligatorio              |
+| HTTPS          | Según deployment | Obligatorio              |
+| ARCA           | Mock             | Real                     |
+| Secrets        | Falsos           | Secret management        |
+| MFA            | Opcional         | Recomendado/según riesgo |
+| Rate limit     | Básico           | Completo                 |
+| Audit          | Sí               | Inmutable/configurado    |
+| Backups        | No crítico       | Obligatorio              |
+| Monitoring     | Básico           | Completo                 |
+| Security tests | Core             | Exhaustivos              |
+| Datos          | Ficticios        | Reales protegidos        |
+
+---
+
+# 82. ARQUITECTURA DE SEGURIDAD
+
+La arquitectura conceptual será:
+
+```text
+                    INTERNET
+                       │
+                       ▼
+                HTTPS / TLS
+                       │
+                       ▼
+              ┌─────────────────┐
+              │    FRONTEND     │
+              │ React + Vite    │
+              └────────┬────────┘
+                       │
+                       ▼
+              ┌─────────────────┐
+              │ SECURITY LAYER  │
+              │ Auth / Session  │
+              │ Rate Limit      │
+              │ CORS / Headers  │
+              └────────┬────────┘
+                       │
+                       ▼
+              ┌─────────────────┐
+              │      API        │
+              │ Node + Express  │
+              └────────┬────────┘
+                       │
+              ┌────────┴────────┐
+              ▼                 ▼
+        Authorization       Validation
+              │                 │
+              └────────┬────────┘
+                       ▼
+              ┌─────────────────┐
+              │ BUSINESS RULES  │
+              └────────┬────────┘
+                       │
+                       ▼
+              ┌─────────────────┐
+              │   TRANSACTION   │
+              │  Prisma / DB    │
+              └────────┬────────┘
+                       │
+                       ▼
+                 PostgreSQL
+                       │
+             ┌─────────┴─────────┐
+             ▼                   ▼
+        AuditLog             Movements
+```
+
+---
+
+# 83. REGLA CRÍTICA
+
+Toda operación crítica deberá satisfacer:
 
 ```text
 IDENTIDAD
 +
 PERMISO
 +
-ALCANCE
+SCOPE
++
+ESTADO
 +
 REGLA DE NEGOCIO
 +
-ESTADO VÁLIDO
-+
 INTEGRIDAD
++
+AUDITORÍA
 ```
 
-sean correctos.
+---
+
+# 84. NO NEGOCIABLES
+
+OpenCode NO debe implementar:
+
+```text
+❌ passwords en texto plano
+❌ secrets en Git
+❌ autorización solamente en frontend
+❌ role check solamente en React
+❌ acceso cross-branch sin permiso
+❌ UPDATE directo de stock
+❌ UPDATE directo de saldos
+❌ eliminación física de operaciones históricas
+❌ JWT sin expiración
+❌ SQL concatenado
+❌ CORS abierto indiscriminadamente
+❌ ARCA desde frontend
+❌ credenciales reales en demo
+❌ operaciones financieras sin audit
+❌ pagos sin idempotencia cuando corresponda
+❌ operaciones críticas sin transacción
+```
+
+---
+
+# 85. INTEGRACIÓN CON LOS OTROS MÓDULOS
+
+Este módulo depende y complementa:
+
+```text
+02_ROLES_Y_PERMISOS
+03_EMPRESA_SUCURSALES_Y_POS
+05_INVENTARIO_Y_STOCK
+09_VENTAS_Y_POS
+10_CAJAS_Y_ARQUEOS
+11_TESORERIA_Y_CAJA_MAYOR
+12_CUENTAS_FINANCIERAS
+13_PAGOS_Y_MOVIMIENTOS_DINERO
+14_RESERVAS_Y_SEÑAS
+15_PRESTAMOS_PUBLICIDAD
+16_CAMBIOS_Y_DEVOLUCIONES
+17_EMPLEADOS_Y_SUELDOS
+18_VENTAS_DE_EMPLEADOS
+19_FACTURACION_ARCA
+21_AUDITORIA_Y_TRAZABILIDAD
+22_REGLAS_DE_NEGOCIO
+23_ESTADOS_Y_TRANSICIONES
+24_MODELO_DE_DATOS
+25_ARQUITECTURA_TECNICA
+27_INFRAESTRUCTURA_Y_DEPLOYMENT
+28_TESTING_QA_Y_DEFINITION_OF_DONE
+```
+
+No debe duplicar las reglas de esos módulos.
+
+Debe establecer cómo se protegen.
+
+---
+
+# 86. DEFINITION OF DONE — SEGURIDAD
+
+El módulo se considera implementado cuando:
+
+### Identidad
+
+* [ ] usuarios identificables individualmente;
+* [ ] password hashing seguro;
+* [ ] sesiones controladas;
+* [ ] expiración;
+* [ ] revocación.
+
+### Autorización
+
+* [ ] RBAC;
+* [ ] permisos granulares;
+* [ ] scope por empresa;
+* [ ] scope por sucursal;
+* [ ] protección IDOR;
+* [ ] backend enforcement.
+
+### Datos
+
+* [ ] validación runtime;
+* [ ] SQL seguro;
+* [ ] XSS controlado;
+* [ ] CORS configurado;
+* [ ] HTTPS producción;
+* [ ] secrets protegidos.
+
+### Operaciones
+
+* [ ] transacciones;
+* [ ] idempotencia;
+* [ ] concurrencia;
+* [ ] protección de stock;
+* [ ] protección financiera;
+* [ ] separación POS/caja.
+
+### Auditoría
+
+* [ ] login auditado;
+* [ ] permisos rechazados auditados;
+* [ ] operaciones críticas auditadas;
+* [ ] secretos excluidos de logs.
+
+### Infraestructura
+
+* [ ] environments separados;
+* [ ] `.env.example`;
+* [ ] backups;
+* [ ] DB protegida;
+* [ ] dependencias controladas.
+
+### Testing
+
+* [ ] auth tests;
+* [ ] authorization tests;
+* [ ] scope tests;
+* [ ] IDOR tests;
+* [ ] concurrency tests;
+* [ ] idempotency tests;
+* [ ] security regression tests.
+
+---
+
+# 87. CRITERIOS DE ACEPTACIÓN
+
+El sistema debe poder demostrar como mínimo:
+
+### Caso 1 — vendedor
+
+```text
+Login vendedor
+↓
+Accede a su sucursal
+↓
+Crea venta
+↓
+Envía a caja
+```
+
+Puede realizarlo.
+
+---
+
+### Caso 2 — vendedor intenta cerrar caja
+
+```text
+Vendedor
+↓
+POST /cash/register/close
+↓
+403 FORBIDDEN
+↓
+AuditLog
+```
+
+Debe ser rechazado.
+
+---
+
+### Caso 3 — acceso cross-branch
+
+```text
+Usuario sucursal A
+↓
+solicita recurso sucursal B
+↓
+DENIED
+```
+
+---
+
+### Caso 4 — stock
+
+```text
+Dos usuarios
+↓
+última unidad
+↓
+dos ventas simultáneas
+↓
+una aprobada
+una rechazada
+```
+
+Nunca stock negativo.
+
+---
+
+### Caso 5 — pago duplicado
+
+```text
+request
+↓
+timeout
+↓
+retry
+↓
+same Idempotency-Key
+```
+
+Resultado:
+
+```text
+un único movimiento
+```
+
+---
+
+### Caso 6 — operación histórica
+
+```text
+Venta COMPLETED
+↓
+usuario intenta editar total
+↓
+DENIED
+```
+
+La corrección debe realizarse mediante la operación correspondiente.
+
+---
+
+# 88. PRINCIPIO FINAL
+
+La seguridad del sistema no debe depender de una sola tecnología.
+
+No es:
+
+```text
+JWT + bcrypt
+```
+
+La seguridad real es:
+
+```text
+IDENTIDAD
+        +
+AUTENTICACIÓN
+        +
+AUTORIZACIÓN
+        +
+SCOPE
+        +
+VALIDACIÓN
+        +
+REGLAS DE NEGOCIO
+        +
+TRANSACCIONES
+        +
+CONCURRENCIA
+        +
+IDEMPOTENCIA
+        +
+INTEGRIDAD DB
+        +
+AUDITORÍA
+        +
+INFRAESTRUCTURA
+        +
+TESTING
+```
+
+El objetivo final es que ninguna persona pueda realizar una operación crítica simplemente porque descubrió un endpoint o modificó una petición HTTP.
+
+El sistema debe responder siempre:
+
+> **Quién sos, qué podés hacer, sobre qué datos podés hacerlo, en qué estado está la operación y si la operación es válida.**
+
+Ese es el modelo de seguridad base para VM Digital Studio.
+
+---
+
+## REGLA PARA OPENCODE
+
+Antes de implementar cualquier funcionalidad, OpenCode deberá verificar:
+
+```text
+AUTH
+→ ¿Quién es el usuario?
+
+RBAC
+→ ¿Qué permiso tiene?
+
+SCOPE
+→ ¿Sobre qué empresa/sucursal/recurso puede operar?
+
+STATE
+→ ¿La operación puede ejecutarse en este estado?
+
+BUSINESS RULE
+→ ¿Cumple las reglas del dominio?
+
+TRANSACTION
+→ ¿Los cambios son atómicos?
+
+IDEMPOTENCY
+→ ¿Puede ejecutarse dos veces accidentalmente?
+
+AUDIT
+→ ¿Queda evidencia?
+
+SECURITY
+→ ¿Existe alguna forma de bypass?
+
+TEST
+→ ¿Existe una prueba que demuestre que está protegido?
+```
+
+Si cualquiera de estos puntos falla, la implementación **no está terminada**.
