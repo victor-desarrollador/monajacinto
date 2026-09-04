@@ -1,0 +1,12 @@
+# Local tooling
+tools/superpowers/
+
+# Node / build
+node_modules/
+dist/
+coverage/
+
+# Environment
+.env
+.env.*
+!.env.example
