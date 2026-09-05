@@ -253,6 +253,32 @@ describe('sendToCashier', () => {
     expect(() => sendToCashier(snapshot, sale.id)).toThrow(/empty/)
   })
 
+  it('rejects sending a zero-total sale to the cashier', () => {
+    const { snapshot, sale } = createDraft()
+    // Valid line: discount === unitPrice -> subtotal 0, sale total 0.
+    const zeroTotal = addItem(snapshot, sale.id, VARIANT, 1, 45000)
+    expect(findSale(zeroTotal, sale.id).items[0].subtotal).toBe(0)
+    expect(findSale(zeroTotal, sale.id).total).toBe(0)
+
+    const before = clone(zeroTotal)
+    expect(() => sendToCashier(zeroTotal, sale.id)).toThrow(
+      /greater than zero/,
+    )
+    expect(findSale(zeroTotal, sale.id).status).toBe('DRAFT')
+    expect(zeroTotal).toEqual(before)
+  })
+
+  it('allows a sale containing a zero-value line when the sale total is positive', () => {
+    const { snapshot, sale } = createDraft()
+    const step1 = addItem(snapshot, sale.id, VARIANT, 1, 45000) // subtotal 0
+    const step2 = addItem(step1, sale.id, JEAN, 1, 0) // subtotal 120000
+    expect(findSale(step2, sale.id).total).toBe(120000)
+
+    const sent = sendToCashier(step2, sale.id)
+    expect(findSale(sent, sale.id).status).toBe('PENDING_PAYMENT')
+    expect(findSale(sent, sale.id).items).toHaveLength(2)
+  })
+
   it('rejects a sale that is not in DRAFT state', () => {
     const { snapshot, sale } = createDraft()
     const withItem = addItem(snapshot, sale.id, VARIANT, 1, 0)

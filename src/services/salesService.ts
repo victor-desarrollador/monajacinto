@@ -155,7 +155,8 @@ export function addItem(
 /**
  * Send a DRAFT sale to the cashier: DRAFT -> PENDING_PAYMENT.
  *
- * - requires at least one item;
+ * - requires at least one item AND a positive total (Sale.total > 0), so the
+ *   sale is always payable (Payment.amount > 0);
  * - only accepts DRAFT (assertTransition rejects anything else);
  * - never changes stock, never creates a payment, never finalizes.
  */
@@ -167,6 +168,11 @@ export function sendToCashier(
   if (sale.items.length === 0) {
     throw new Error(
       `salesService: cannot send empty sale ${saleId} to the cashier`,
+    )
+  }
+  if (sale.total <= 0) {
+    throw new Error(
+      `salesService: cannot send sale ${saleId} with total ${sale.total} to the cashier; total must be greater than zero`,
     )
   }
   assertTransition(sale.status, 'PENDING_PAYMENT')
